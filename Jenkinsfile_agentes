@@ -8,7 +8,7 @@ pipeline {
 
     environment {
         AWS_REGION = 'us-east-1'
-        STACK_NAME = 'todo-list-aws-staging'
+        STACK_NAME = 'todo-list-aws-production'
     }
 
     stages {
@@ -28,66 +28,32 @@ pipeline {
             }
         }
 
-        stage('Build and Verify') {
-            parallel {
-                stage('Static Test') {
-                    agent { label 'static-agent' }
-                    steps {
-                        checkout scm
-                        sh '''
-                            whoami
-                            hostname
-                            echo "WORKSPACE=$WORKSPACE"
-                            set -e
-                            python3 -m flake8 --format=pylint src/ > flake8.out || true
-                            python3 -m bandit -r src/ -f custom \
-                                --msg-template "{abspath}:{line}: [{test_id}] {msg}" \
-                                -o bandit.out || true
-                            echo "--- flake8.out ---"; cat flake8.out || true
-                            echo "--- bandit.out ---"; cat bandit.out || true
-                        '''
-                        recordIssues(
-                            tools: [
-                                flake8(pattern: 'flake8.out'),
-                                pyLint(name: 'Bandit', id: 'bandit', pattern: 'bandit.out')
-                            ]
-                        )
-                    }
-                    post {
-                        always {
-                            archiveArtifacts artifacts: 'flake8.out, bandit.out', allowEmptyArchive: true
-                        }
-                    }
-                }
-
-                stage('Deploy') {
-                    agent any
-                    steps {
-                        checkout scm
-                        sh '''
-                            whoami
-                            hostname
-                            echo "WORKSPACE=$WORKSPACE"
-                            set -e
-                            sam validate --region ${AWS_REGION}
-                            sam build
-                            sam deploy \
-                                --config-env staging \
-                                --resolve-s3 \
-                                --no-confirm-changeset \
-                                --no-fail-on-empty-changeset \
-                                --region ${AWS_REGION}
-                        '''
-                        script {
-                            env.BASE_URL = sh(
-                                returnStdout: true,
-                                script: "aws cloudformation describe-stacks --stack-name ${env.STACK_NAME} --query \"Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue\" --output text --region ${env.AWS_REGION}"
-                            ).trim()
-                            echo "BASE_URL staging = ${env.BASE_URL}"
-                            if (!env.BASE_URL?.startsWith('https://')) {
-                                error("No se pudo obtener BaseUrlApi del stack ${env.STACK_NAME}")
-                            }
-                        }
+        stage('Deploy') {
+            agent any
+            steps {
+                checkout scm
+                sh '''
+                    whoami
+                    hostname
+                    echo "WORKSPACE=$WORKSPACE"
+                    set -e
+                    sam validate --region ${AWS_REGION}
+                    sam build
+                    sam deploy \
+                        --config-env production \
+                        --resolve-s3 \
+                        --no-confirm-changeset \
+                        --no-fail-on-empty-changeset \
+                        --region ${AWS_REGION}
+                '''
+                script {
+                    env.BASE_URL = sh(
+                        returnStdout: true,
+                        script: "aws cloudformation describe-stacks --stack-name ${env.STACK_NAME} --query \"Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue\" --output text --region ${env.AWS_REGION}"
+                    ).trim()
+                    echo "BASE_URL production = ${env.BASE_URL}"
+                    if (!env.BASE_URL?.startsWith('https://')) {
+                        error("No se pudo obtener BaseUrlApi del stack ${env.STACK_NAME}")
                     }
                 }
             }
@@ -104,31 +70,7 @@ pipeline {
                         echo "WORKSPACE=$WORKSPACE"
                         set -e
                         echo "BASE_URL recibido = $BASE_URL"
-                        python3 -m pytest -m api test/integration/todoApiTest.py -v
-                    '''
-                }
-            }
-        }
-
-        stage('Promote') {
-            agent any
-            steps {
-                checkout scm
-                withCredentials([gitUsernamePassword(credentialsId: 'github-token', gitToolName: 'Default')]) {
-                    sh '''
-                        whoami
-                        hostname
-                        echo "WORKSPACE=$WORKSPACE"
-                        set -e
-                        git config user.email "jenkins@ci.local"
-                        git config user.name  "Jenkins CI"
-                        git fetch origin
-                        git checkout -B master origin/master
-                        git merge --no-ff origin/develop -m "Promote: develop -> master" -X theirs || true
-                        git checkout origin/master -- Jenkinsfile Jenkinsfile_agentes 2>/dev/null || true
-                        git add -A
-                        git commit -m "Promote develop->master (preserva Jenkinsfile CD)" || echo "Sin cambios para commit"
-                        git push origin master
+                        python3 -m pytest -m readonly test/integration/todoApiTest.py -v
                     '''
                 }
             }
