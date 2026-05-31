@@ -1,0 +1,79 @@
+pipeline {
+    agent none
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        AWS_REGION = 'us-east-1'
+        STACK_NAME = 'todo-list-aws-production'
+    }
+
+    stages {
+
+        stage('Get Code') {
+            agent any
+            steps {
+                checkout scm
+                sh '''
+                    whoami
+                    hostname
+                    echo "WORKSPACE=$WORKSPACE"
+                    set -e
+                    echo "Branch:  $(git rev-parse --abbrev-ref HEAD)"
+                    echo "Commit:  $(git rev-parse HEAD)"
+                '''
+            }
+        }
+
+        stage('Deploy') {
+            agent any
+            steps {
+                checkout scm
+                sh '''
+                    whoami
+                    hostname
+                    echo "WORKSPACE=$WORKSPACE"
+                    set -e
+                    sam validate --region ${AWS_REGION}
+                    sam build
+                    sam deploy \
+                        --config-env production \
+                        --resolve-s3 \
+                        --no-confirm-changeset \
+                        --no-fail-on-empty-changeset \
+                        --region ${AWS_REGION}
+                '''
+                script {
+                    env.BASE_URL = sh(
+                        returnStdout: true,
+                        script: "aws cloudformation describe-stacks --stack-name ${env.STACK_NAME} --query \"Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue\" --output text --region ${env.AWS_REGION}"
+                    ).trim()
+                    echo "BASE_URL production = ${env.BASE_URL}"
+                    if (!env.BASE_URL?.startsWith('https://')) {
+                        error("No se pudo obtener BaseUrlApi del stack ${env.STACK_NAME}")
+                    }
+                }
+            }
+        }
+
+        stage('Rest Test') {
+            agent { label 'rest-agent' }
+            steps {
+                checkout scm
+                withEnv(["BASE_URL=${env.BASE_URL}"]) {
+                    sh '''
+                        whoami
+                        hostname
+                        echo "WORKSPACE=$WORKSPACE"
+                        set -e
+                        echo "BASE_URL recibido = $BASE_URL"
+                        python3 -m pytest -m readonly test/integration/todoApiTest.py -v
+                    '''
+                }
+            }
+        }
+    }
+}
