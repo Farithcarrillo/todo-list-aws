@@ -8,3 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Versión inicial de código.
 
+## [Unreleased]
+   ### Notas
+   - Prueba de webhook CI/CD multibranch.
+   - - Re-disparo CI/CD por cold start transitorio (Lambda Timeout=3s).
