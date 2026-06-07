@@ -68,5 +68,33 @@ pipeline {
                 }
             }
         }
+
+        stage('Promote') {
+            steps {
+                withCredentials([gitUsernamePassword(credentialsId: 'github-token', gitToolName: 'Default')]) {
+                    sh '''
+                        set -e
+                        git config user.email "jenkins@ci.local"
+                        git config user.name  "Jenkins CI"
+                        git fetch origin master:refs/remotes/origin/master
+                        git fetch origin
+                        git checkout -B master origin/master
+                        # Merge develop en master con preferencia a develop en caso de conflicto.
+                        git merge --no-ff origin/develop -m "Promote: develop -> master" -X theirs || true
+                        # Restaurar los Jenkinsfile de master (no deben venir de develop).
+                        git checkout origin/master -- Jenkinsfile Jenkinsfile_agentes 2>/dev/null || true
+                        git add -A
+                        git commit -m "Promote develop->master (preserva Jenkinsfile CD)" || echo "Sin cambios para commit"
+                        git push origin master
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: 'flake8.out, bandit.out', allowEmptyArchive: true
+        }
     }
 }

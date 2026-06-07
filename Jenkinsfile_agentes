@@ -74,7 +74,32 @@ pipeline {
                         echo "WORKSPACE=$WORKSPACE"
                         set -e
                         echo "BASE_URL recibido = $BASE_URL"
-                        python3 -m pytest -m readonly test/integration/todoApiTest.py -v
+                        python3 -m pytest -m api test/integration/todoApiTest.py -v
+                    '''
+                }
+            }
+        }
+
+        stage('Promote') {
+            agent any
+            steps {
+                checkout scm
+                withCredentials([gitUsernamePassword(credentialsId: 'github-token', gitToolName: 'Default')]) {
+                    sh '''
+                        whoami
+                        hostname
+                        echo "WORKSPACE=$WORKSPACE"
+                        set -e
+                        git config user.email "jenkins@ci.local"
+                        git config user.name  "Jenkins CI"
+                        git fetch origin master:refs/remotes/origin/master
+                        git fetch origin
+                        git checkout -B master origin/master
+                        git merge --no-ff origin/develop -m "Promote: develop -> master" -X theirs || true
+                        git checkout origin/master -- Jenkinsfile Jenkinsfile_agentes 2>/dev/null || true
+                        git add -A
+                        git commit -m "Promote develop->master (preserva Jenkinsfile CD)" || echo "Sin cambios para commit"
+                        git push origin master
                     '''
                 }
             }
