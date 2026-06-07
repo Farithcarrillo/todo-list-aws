@@ -34,6 +34,10 @@ pipeline {
             steps {
                 sh '''
                     set -e
+                    rm -f samconfig.toml
+                    git clone -b staging --depth 1 https://github.com/Farithcarrillo/todo-list-aws-config.git _cfg
+                    cp _cfg/samconfig.toml samconfig.toml
+                    rm -rf _cfg
                     sam validate --region ${AWS_REGION}
                     sam build
                     sam deploy \
