@@ -90,6 +90,7 @@ pipeline {
                         set -e
                         git config user.email "jenkins@ci.local"
                         git config user.name  "Jenkins CI"
+                        git fetch origin master:refs/remotes/origin/master
                         git fetch origin
                         git checkout -B master origin/master
                         # Merge develop en master con preferencia a develop en caso de conflicto.
